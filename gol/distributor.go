@@ -30,23 +30,26 @@ func distributor(p Params, c distributorChannels) {
 		world[i] = make([]byte, p.ImageWidth)
 	}
 
-	// TODO: For all initially alive cells send a CellFlipped Event.
-
 	for i, row := range world {
 		for j, _ := range row {
 			world[i][j] = <-c.ioInput
 		}
 	}
 
-	c.ioCommand <- ioCheckIdle
-	<-c.ioIdle
+	// TODO: For all initially alive cells send a CellFlipped Event.
+
+	turn := 0
+
+	// TODO: Execute all turns of the Game of Life.
+	// TODO: Send correct Events when required, e.g. CellFlipped, TurnComplete and FinalTurnComplete.
+	//		 See event.go for a list of all events.
 
 	for y, row := range world {
 		for x, element := range row {
 			if element == 255 {
 				//fmt.Println(x, y)
 				c.events <- CellFlipped{
-					CompletedTurns: 0,
+					CompletedTurns: turn,
 					Cell: util.Cell{
 						X: y,
 						Y: x,
@@ -54,10 +57,6 @@ func distributor(p Params, c distributorChannels) {
 				}
 			}
 		}
-	}
-
-	c.events <- TurnComplete {
-		CompletedTurns: 1,
 	}
 
 	var aliveCells []util.Cell
@@ -69,18 +68,14 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 
-	c.events <- FinalTurnComplete{
-		CompletedTurns: 1,
-		Alive: aliveCells,
+	c.events <- TurnComplete {
+		CompletedTurns: turn,
 	}
 
-	//fmt.Println(world)
-
-	turn := 0
-
-	// TODO: Execute all turns of the Game of Life.
-	// TODO: Send correct Events when required, e.g. CellFlipped, TurnComplete and FinalTurnComplete.
-	//		 See event.go for a list of all events.
+	c.events <- FinalTurnComplete{
+		CompletedTurns: turn,
+		Alive: aliveCells,
+	}
 
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
