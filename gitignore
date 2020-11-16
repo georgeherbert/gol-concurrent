@@ -45,3 +45,5 @@ your-time\.txt
 .DS_Store
 
 **.idea/**
+
+/.idea/
