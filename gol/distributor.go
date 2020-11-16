@@ -1,8 +1,9 @@
 package gol
 
 import (
-	"fmt"
+	//"fmt"
 	"strconv"
+	"uk.ac.bris.cs/gameoflife/util"
 )
 
 type distributorChannels struct {
@@ -24,11 +25,56 @@ func distributor(p Params, c distributorChannels) {
 	fileName := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
 	c.ioFileName <- fileName
 
-	for i := 0; i < p.ImageWidth * p.ImageHeight; i++ {
-		fmt.Println(<-c.ioInput)
+	world := make([][]byte, p.ImageHeight)
+	for i := range world {
+		world[i] = make([]byte, p.ImageWidth)
 	}
 
 	// TODO: For all initially alive cells send a CellFlipped Event.
+
+	for i, row := range world {
+		for j, _ := range row {
+			world[i][j] = <-c.ioInput
+		}
+	}
+
+	c.ioCommand <- ioCheckIdle
+	<-c.ioIdle
+
+	for y, row := range world {
+		for x, element := range row {
+			if element == 255 {
+				//fmt.Println(x, y)
+				c.events <- CellFlipped{
+					CompletedTurns: 0,
+					Cell: util.Cell{
+						X: y,
+						Y: x,
+					},
+				}
+			}
+		}
+	}
+
+	c.events <- TurnComplete {
+		CompletedTurns: 1,
+	}
+
+	var aliveCells []util.Cell
+	for y, row := range world {
+		for x, element := range row {
+			if element == 255 {
+				aliveCells = append(aliveCells, util.Cell{X: x, Y: y})
+			}
+		}
+	}
+
+	c.events <- FinalTurnComplete{
+		CompletedTurns: 1,
+		Alive: aliveCells,
+	}
+
+	//fmt.Println(world)
 
 	turn := 0
 
