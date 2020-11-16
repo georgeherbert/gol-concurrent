@@ -1,15 +1,33 @@
 package gol
 
+import (
+	"fmt"
+	"strconv"
+)
+
 type distributorChannels struct {
-	events    chan<- Event
+	events chan<- Event
 	ioCommand chan<- ioCommand
-	ioIdle    <-chan bool
+	ioIdle <-chan bool
+	ioFileName chan<- string
+	ioOutput chan<- uint8
+	ioInput <-chan uint8
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 
 	// TODO: Create a 2D slice to store the world.
+
+	c.ioCommand <- ioInput
+
+	fileName := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
+	c.ioFileName <- fileName
+
+	for i := 0; i < p.ImageWidth * p.ImageHeight; i++ {
+		fmt.Println(<-c.ioInput)
+	}
+
 	// TODO: For all initially alive cells send a CellFlipped Event.
 
 	turn := 0
