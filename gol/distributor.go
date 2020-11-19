@@ -124,10 +124,13 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byt
 	return nextWorld
 }
 
-func worker(part chan [][]byte, events chan<- Event, startX int, startY int, endX int, endY int) {
-	thePart := <-part
-	nextPart := calculateNextState(thePart, events, startY)
-	part <- nextPart
+// Takes part of an image, calculates the next stage, and passes it back
+func worker(part chan [][]byte, events chan<- Event, startY int) {
+	for {
+		thePart := <-part
+		nextPart := calculateNextState(thePart, events, startY)
+		part <- nextPart
+	}
 }
 
 func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][]byte {
@@ -152,27 +155,24 @@ func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][
 
 // Distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
-	// TODO: Create a 2D slice to store the world.
-	// TODO: For all initially alive cells send a CellFlipped Event.
-	// TODO: Execute all turns of the Game of Life.
-	// TODO: Send correct Events when required, e.g. CellFlipped, TurnComplete and FinalTurnComplete.
-	//		 See event.go for a list of all events.
 	sendFileName(p.ImageWidth, p.ImageWidth, c.ioCommand, c.ioFileName)
 	world := initialiseWorld(p.ImageHeight, p.ImageWidth, c.ioInput, c.events)
 	parts := createPartChannels(p.Threads)
+	sectionHeight := p.ImageHeight / p.Threads
+	for i, part := range parts {
+		startY := i * sectionHeight
+		go worker(part, c.events, startY)
+	}
 
 	// For each turn, pass part of an image to each thread and process it, then put it back together and repeat
 	var turn int
 	for turn = 0; turn < p.Turns; turn++ {
 		for i, part := range parts {
-			sectionHeight := p.ImageHeight / p.Threads
 			startY := i * sectionHeight
 			endY := startY + sectionHeight
-			go worker(part, c.events, 0, startY, p.ImageWidth, endY)
 			worldPart := getPart(world, p.Threads, i, startY, endY)
 			part <- worldPart
 		}
-
 		world = [][]byte{}
 		for _, part := range parts {
 			world = append(world, <-part...)
