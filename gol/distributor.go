@@ -1,7 +1,6 @@
 package gol
 
 import (
-	"fmt"
 	//"fmt"
 	"strconv"
 	"uk.ac.bris.cs/gameoflife/util"
@@ -128,7 +127,6 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byt
 func worker(part chan [][]byte, events chan<- Event, startX int, startY int, endX int, endY int) {
 	thePart := <-part
 	nextPart := calculateNextState(thePart, events, startY)
-	fmt.Println(len(thePart))
 	part <- nextPart
 }
 
@@ -171,7 +169,6 @@ func distributor(p Params, c distributorChannels) {
 			startY := i * sectionHeight
 			endY := startY + sectionHeight
 			go worker(part, c.events, 0, startY, p.ImageWidth, endY)
-
 			worldPart := getPart(world, p.Threads, i, startY, endY)
 			part <- worldPart
 		}
