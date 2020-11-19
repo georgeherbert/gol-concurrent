@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
+	"sync"
 )
 
 type distributorChannels struct {
@@ -135,6 +136,7 @@ func worker(part chan [][]byte, events chan<- Event, startY int, turns int) {
 	}
 }
 
+// Returns the number of alive cells in a world
 func calcNumAliveCells(world [][]byte) int {
 	total := 0
 	for _, row := range world {
@@ -147,6 +149,7 @@ func calcNumAliveCells(world [][]byte) int {
 	return total
 }
 
+// Returns part of a world given the number of threads, the part number, the startY, and the endY
 func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][]byte {
 	var worldPart [][]byte
 	if threads == 1 {
@@ -167,6 +170,36 @@ func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][
 	return worldPart
 }
 
+// Returns a slice of alive cells
+func getAliveCells(world [][]byte) []util.Cell {
+	var aliveCells []util.Cell
+	for y, row := range world {
+		for x, element := range row {
+			if element == 255 {
+				aliveCells = append(aliveCells, util.Cell{X: x, Y: y})
+			}
+		}
+	}
+	return aliveCells
+}
+
+// Writes to a file and sends the correct event
+func writeFile(world [][]byte, fileName string, turns int, ioCommand chan<- ioCommand, ioFileName chan<- string,
+	ioOutputChannel chan<- uint8, events chan<- Event) {
+	outputFileName := fileName + "x" + strconv.Itoa(turns)
+	ioCommand <- ioOutput
+	ioFileName <- outputFileName
+	for _, row := range world {
+		for _, element := range row {
+			ioOutputChannel <- element
+		}
+	}
+	events <- ImageOutputComplete{ // implements Event
+		CompletedTurns: turns,
+		Filename:       outputFileName,
+	}
+}
+
 // Distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 	fileName := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
@@ -179,16 +212,20 @@ func distributor(p Params, c distributorChannels) {
 		go worker(part, c.events, startY, p.Turns)
 	}
 	var turn int
+	var completedTurns int
+	mutex := &sync.Mutex{}
 	// Ticker
 	ticker := time.NewTicker(2 * time.Second)
 	go func() {
 		for {
 			select{
 			case <-ticker.C:
+				mutex.Lock()
 				c.events <- AliveCellsCount{
-					CompletedTurns: turn,
+					CompletedTurns: completedTurns,
 					CellsCount: calcNumAliveCells(world),
 				}
+				mutex.Unlock()
 			}
 		}
 	}()
@@ -205,43 +242,23 @@ func distributor(p Params, c distributorChannels) {
 		for _, part := range parts {
 			nextWorld = append(nextWorld, <-part...)
 		}
+		mutex.Lock()
 		world = nextWorld
+		completedTurns = turn + 1
+		mutex.Unlock()
 		c.events <- TurnComplete{
-			CompletedTurns: turn + 1,
+			CompletedTurns: completedTurns,
 		}
 	}
 	ticker.Stop()
-
-	var aliveCells []util.Cell
-	for y, row := range world {
-		for x, element := range row {
-			if element == 255 {
-				aliveCells = append(aliveCells, util.Cell{X: x, Y: y})
-			}
-		}
-	}
+	aliveCells := getAliveCells(world)
 	c.events <- FinalTurnComplete{
 		CompletedTurns: turn,
 		Alive:          aliveCells,
 	}
-
-	outputFileName := fileName + "x" + strconv.Itoa(p.Turns)
-	c.ioCommand <- ioOutput
-	c.ioFileName <- outputFileName
-	for _, row := range world {
-		for _, element := range row {
-			c.ioOutput <- element
-		}
-	}
-	c.events <- ImageOutputComplete{ // implements Event
-		CompletedTurns: turn,
-		Filename:       outputFileName,
-	}
-	// Make sure that the Io has finished any output before exiting.
-	c.ioCommand <- ioCheckIdle
+	writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+	c.ioCommand <- ioCheckIdle // Make sure that the Io has finished any output before exiting.
 	<-c.ioIdle
-
 	c.events <- StateChange{turn, Quitting}
-	// Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
-	close(c.events)
+	close(c.events) // Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 }
