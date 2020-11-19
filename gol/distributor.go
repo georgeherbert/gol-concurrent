@@ -116,6 +116,34 @@ func calculateNextState(world [][]byte, events chan<- Event) [][]byte {
 	return nextWorld
 }
 
+func calculateNextStatePart(world [][]byte, events chan<- Event) [][]byte {
+	var nextWorld [][]byte
+	for y, row := range world {
+		nextWorld = append(nextWorld, []byte{})
+		for x, element := range row {
+			neighbours := getNeighbours(world, y, x)
+			liveNeighbours := calculateLiveNeighbours(neighbours)
+			value := calculateValue(element, liveNeighbours)
+			nextWorld[y] = append(nextWorld[y], value)
+			if value != world[y][x] {
+				events <- CellFlipped{
+					CompletedTurns: 0,
+					Cell: util.Cell{
+						X: x,
+						Y: y,
+					},
+				}
+			}
+		}
+	}
+	return nextWorld
+}
+
+func worker(part chan [][]byte, events chan<- Event, startX int, startY int, endX int, endY int) {
+	nextPart := calculateNextStatePart(<- part, events)
+	part <- nextPart[startY:endY]
+}
+
 // Distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 	// TODO: Create a 2D slice to store the world.
@@ -125,13 +153,35 @@ func distributor(p Params, c distributorChannels) {
 	//		 See event.go for a list of all events.
 	sendFileName(p.ImageWidth, p.ImageWidth, c.ioCommand, c.ioFileName)
 	world := initialiseWorld(p.ImageHeight, p.ImageWidth, c.ioInput, c.events)
+	var parts []chan [][]byte
+	for i := 0; i < p.Threads; i++ {
+		parts = append(parts, make(chan [][]byte))
+	}
 	var turn int
 	for turn = 0; turn < p.Turns; turn++ {
-		world = calculateNextState(world, c.events)
+		for i, part := range parts {
+			sectionHeight := p.ImageHeight / p.Threads
+			startY := i * sectionHeight
+			endY := startY + sectionHeight
+			go worker(part, c.events, 0, startY, p.ImageWidth, endY)
+			part <- world
+		}
+		world = [][]byte{}
+		for _, part := range parts {
+			world = append(world, <-part...)
+		}
 		c.events <- TurnComplete{
 			CompletedTurns: turn,
 		}
 	}
+
+	//var turn int
+	//for turn = 0; turn < p.Turns; turn++ {
+	//	world = calculateNextState(world, c.events)
+	//	c.events <- TurnComplete{
+	//		CompletedTurns: turn,
+	//	}
+	//}
 	var aliveCells []util.Cell
 	for y, row := range world {
 		for x, element := range row {
