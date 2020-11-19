@@ -129,6 +129,26 @@ func worker(part chan [][]byte, events chan<- Event, startX int, startY int, end
 	part <- nextPart
 }
 
+func getPart(world [][]byte, threads int, threadNum int, startY int, endY int) [][]byte {
+	var worldPart [][]byte
+	if threads == 1 {
+		worldPart = append(worldPart, world[len(world) - 1])
+		worldPart = append(worldPart, world...)
+		worldPart = append(worldPart, world[0])
+	} else {
+		if threadNum == 0 {
+			worldPart = append(worldPart, world[len(world)-1])
+			worldPart = append(worldPart, world[:endY + 1]...)
+		} else if threadNum == threads - 1 {
+			worldPart = append(worldPart, world[startY - 1:]...)
+			worldPart = append(worldPart, world[0])
+		} else {
+			worldPart = append(worldPart, world[startY - 1:endY+1]...)
+		}
+	}
+	return worldPart
+}
+
 // Distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
 	// TODO: Create a 2D slice to store the world.
@@ -149,22 +169,22 @@ func distributor(p Params, c distributorChannels) {
 			endY := startY + sectionHeight
 			go worker(part, c.events, 0, startY, p.ImageWidth, endY)
 
-			var worldPart [][]byte
-			if p.Threads == 1 {
-				worldPart = append(worldPart, world[len(world) - 1])
-				worldPart = append(worldPart, world...)
-				worldPart = append(worldPart, world[0])
-			} else {
-				if i == 0 {
-					worldPart = append(worldPart, world[len(world)-1])
-					worldPart = append(worldPart, world[:endY + 1]...)
-				} else if i == len(parts)-1 {
-					worldPart = append(worldPart, world[startY - 1:]...)
-					worldPart = append(worldPart, world[0])
-				} else {
-					worldPart = append(worldPart, world[startY - 1:endY+1]...)
-				}
-			}
+			worldPart := getPart(world, p.Threads, i, startY, endY)
+			//if p.Threads == 1 {
+			//	worldPart = append(worldPart, world[len(world) - 1])
+			//	worldPart = append(worldPart, world...)
+			//	worldPart = append(worldPart, world[0])
+			//} else {
+			//	if i == 0 {
+			//		worldPart = append(worldPart, world[len(world)-1])
+			//		worldPart = append(worldPart, world[:endY + 1]...)
+			//	} else if i == len(parts)-1 {
+			//		worldPart = append(worldPart, world[startY - 1:]...)
+			//		worldPart = append(worldPart, world[0])
+			//	} else {
+			//		worldPart = append(worldPart, world[startY - 1:endY+1]...)
+			//	}
+			//}
 			part <- worldPart
 		}
 
