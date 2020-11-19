@@ -101,7 +101,7 @@ func calculateValue(item byte, liveNeighbours int) byte {
 }
 
 // Returns the next state of part of a world given the current state
-func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byte {
+func calculateNextState(world [][]byte, events chan<- Event, startY int, turn int) [][]byte {
 	var nextWorld [][]byte
 	for y, row := range world[1:len(world) - 1] {
 		nextWorld = append(nextWorld, []byte{})
@@ -112,7 +112,7 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byt
 			nextWorld[y] = append(nextWorld[y], value)
 			if value != world[y + 1][x] {
 				events <- CellFlipped{
-					CompletedTurns: 0,
+					CompletedTurns: turn,
 					Cell: util.Cell{
 						X: x,
 						Y: y + startY,
@@ -125,10 +125,10 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byt
 }
 
 // Takes part of an image, calculates the next stage, and passes it back
-func worker(part chan [][]byte, events chan<- Event, startY int) {
-	for {
+func worker(part chan [][]byte, events chan<- Event, startY int, turns int) {
+	for turn := 0; turn < turns; turn++ {
 		thePart := <-part
-		nextPart := calculateNextState(thePart, events, startY)
+		nextPart := calculateNextState(thePart, events, startY, turn)
 		part <- nextPart
 	}
 }
@@ -161,7 +161,7 @@ func distributor(p Params, c distributorChannels) {
 	sectionHeight := p.ImageHeight / p.Threads
 	for i, part := range parts {
 		startY := i * sectionHeight
-		go worker(part, c.events, startY)
+		go worker(part, c.events, startY, p.Turns)
 	}
 
 	// For each turn, pass part of an image to each worker and process it, then put it back together and repeat
