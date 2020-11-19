@@ -46,6 +46,14 @@ func initialiseWorld(height int, width int, ioInput <-chan uint8, events chan<- 
 	return world
 }
 
+func createPartChannels(numOfThreads int) []chan [][]byte{
+	var parts []chan [][]byte
+	for i := 0; i < numOfThreads; i++ {
+		parts = append(parts, make(chan [][]byte))
+	}
+	return parts
+}
+
 // Returns the neighbours of a cell at given coordinates
 func getNeighbours(world [][]byte, row int, column int) []byte {
 	rowAbove, rowBelow := row - 1, row + 1
@@ -93,16 +101,16 @@ func calculateValue(item byte, liveNeighbours int) byte {
 }
 
 // Returns the next state of part of a world given the current state
-func calculateNextState(world [][]byte, events chan<- Event, startY int, endY int) [][]byte {
+func calculateNextState(world [][]byte, events chan<- Event, startY int) [][]byte {
 	var nextWorld [][]byte
-	for y, row := range world[startY: endY] {
+	for y, row := range world[1:len(world) - 1] {
 		nextWorld = append(nextWorld, []byte{})
 		for x, element := range row {
-			neighbours := getNeighbours(world, y + startY, x)
+			neighbours := getNeighbours(world, y + 1, x)
 			liveNeighbours := calculateLiveNeighbours(neighbours)
 			value := calculateValue(element, liveNeighbours)
 			nextWorld[y] = append(nextWorld[y], value)
-			if value != world[startY:endY][y][x] {
+			if value != world[y + 1][x] {
 				events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{
@@ -117,7 +125,7 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int, endY in
 }
 
 func worker(part chan [][]byte, events chan<- Event, startX int, startY int, endX int, endY int) {
-	nextPart := calculateNextState(<- part, events, startY, endY)
+	nextPart := calculateNextState(<- part, events, startY)
 	part <- nextPart
 }
 
@@ -130,10 +138,9 @@ func distributor(p Params, c distributorChannels) {
 	//		 See event.go for a list of all events.
 	sendFileName(p.ImageWidth, p.ImageWidth, c.ioCommand, c.ioFileName)
 	world := initialiseWorld(p.ImageHeight, p.ImageWidth, c.ioInput, c.events)
-	var parts []chan [][]byte
-	for i := 0; i < p.Threads; i++ {
-		parts = append(parts, make(chan [][]byte))
-	}
+	parts := createPartChannels(p.Threads)
+
+	// For each turn, pass part of an image to each thread and process it, then put it back together and repeat
 	var turn int
 	for turn = 0; turn < p.Turns; turn++ {
 		for i, part := range parts {
@@ -141,8 +148,26 @@ func distributor(p Params, c distributorChannels) {
 			startY := i * sectionHeight
 			endY := startY + sectionHeight
 			go worker(part, c.events, 0, startY, p.ImageWidth, endY)
-			part <- world
+
+			var worldPart [][]byte
+			if p.Threads == 1 {
+				worldPart = append(worldPart, world[len(world) - 1])
+				worldPart = append(worldPart, world...)
+				worldPart = append(worldPart, world[0])
+			} else {
+				if i == 0 {
+					worldPart = append(worldPart, world[len(world)-1])
+					worldPart = append(worldPart, world[:endY + 1]...)
+				} else if i == len(parts)-1 {
+					worldPart = append(worldPart, world[startY - 1:]...)
+					worldPart = append(worldPart, world[0])
+				} else {
+					worldPart = append(worldPart, world[startY - 1:endY+1]...)
+				}
+			}
+			part <- worldPart
 		}
+
 		world = [][]byte{}
 		for _, part := range parts {
 			world = append(world, <-part...)
