@@ -1,8 +1,8 @@
 package gol
 
 import (
-	//"fmt"
 	"strconv"
+	"time"
 	"uk.ac.bris.cs/gameoflife/util"
 )
 
@@ -16,9 +16,8 @@ type distributorChannels struct {
 }
 
 // Sends the file name to io.go so the world can be initialised
-func sendFileName(imageWidth int, imageHeight int, ioCommand chan<- ioCommand, ioFileName chan<- string) {
+func sendFileName(fileName string, ioCommand chan<- ioCommand, ioFileName chan<- string) {
 	ioCommand <- ioInput
-	fileName := strconv.Itoa(imageWidth) + "x" + strconv.Itoa(imageHeight)
 	ioFileName <- fileName
 }
 
@@ -42,6 +41,9 @@ func initialiseWorld(height int, width int, ioInput <-chan uint8, events chan<- 
 				}
 			}
 		}
+	}
+	events <- TurnComplete{
+		CompletedTurns: 0,
 	}
 	return world
 }
@@ -75,7 +77,7 @@ func getNeighbours(world [][]byte, row int, column int) []byte {
 }
 
 // Returns the number of live neighbours from a set of neighbours
-func calculateLiveNeighbours(neighbours []byte) int {
+func calcLiveNeighbours(neighbours []byte) int {
 	liveNeighbours := 0
 	for _, neighbour := range neighbours {
 		if neighbour == 255 {
@@ -86,7 +88,7 @@ func calculateLiveNeighbours(neighbours []byte) int {
 }
 
 // Returns the new value of a cell given its current value and number of live neighbours
-func calculateValue(item byte, liveNeighbours int) byte {
+func calcValue(item byte, liveNeighbours int) byte {
 	calculatedValue := byte(0)
 	if item == 255 {
 		if liveNeighbours == 2 || liveNeighbours == 3 {
@@ -101,14 +103,14 @@ func calculateValue(item byte, liveNeighbours int) byte {
 }
 
 // Returns the next state of part of a world given the current state
-func calculateNextState(world [][]byte, events chan<- Event, startY int, turn int) [][]byte {
+func calcNextState(world [][]byte, events chan<- Event, startY int, turn int) [][]byte {
 	var nextWorld [][]byte
 	for y, row := range world[1:len(world) - 1] {
 		nextWorld = append(nextWorld, []byte{})
 		for x, element := range row {
 			neighbours := getNeighbours(world, y + 1, x)
-			liveNeighbours := calculateLiveNeighbours(neighbours)
-			value := calculateValue(element, liveNeighbours)
+			liveNeighbours := calcLiveNeighbours(neighbours)
+			value := calcValue(element, liveNeighbours)
 			nextWorld[y] = append(nextWorld[y], value)
 			if value != world[y + 1][x] {
 				events <- CellFlipped{
@@ -128,9 +130,21 @@ func calculateNextState(world [][]byte, events chan<- Event, startY int, turn in
 func worker(part chan [][]byte, events chan<- Event, startY int, turns int) {
 	for turn := 0; turn < turns; turn++ {
 		thePart := <-part
-		nextPart := calculateNextState(thePart, events, startY, turn)
+		nextPart := calcNextState(thePart, events, startY, turn)
 		part <- nextPart
 	}
+}
+
+func calcNumAliveCells(world [][]byte) int {
+	total := 0
+	for _, row := range world {
+		for _, element := range row {
+			if element == 255 {
+				total += 1
+			}
+		}
+	}
+	return total
 }
 
 func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][]byte {
@@ -155,7 +169,8 @@ func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][
 
 // Distributor divides the work between workers and interacts with other goroutines.
 func distributor(p Params, c distributorChannels) {
-	sendFileName(p.ImageWidth, p.ImageWidth, c.ioCommand, c.ioFileName)
+	fileName := strconv.Itoa(p.ImageWidth) + "x" + strconv.Itoa(p.ImageHeight)
+	sendFileName(fileName, c.ioCommand, c.ioFileName)
 	world := initialiseWorld(p.ImageHeight, p.ImageWidth, c.ioInput, c.events)
 	parts := createPartChannels(p.Threads)
 	sectionHeight := p.ImageHeight / p.Threads
@@ -163,9 +178,22 @@ func distributor(p Params, c distributorChannels) {
 		startY := i * sectionHeight
 		go worker(part, c.events, startY, p.Turns)
 	}
-
-	// For each turn, pass part of an image to each worker and process it, then put it back together and repeat
 	var turn int
+	// Ticker
+	ticker := time.NewTicker(2 * time.Second)
+	go func() {
+		for {
+			select{
+			case <-ticker.C:
+				c.events <- AliveCellsCount{
+					CompletedTurns: turn,
+					CellsCount: calcNumAliveCells(world),
+				}
+			}
+		}
+	}()
+	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
+	var nextWorld [][]byte
 	for turn = 0; turn < p.Turns; turn++ {
 		for i, part := range parts {
 			startY := i * sectionHeight
@@ -173,14 +201,16 @@ func distributor(p Params, c distributorChannels) {
 			worldPart := getPart(world, p.Threads, i, startY, endY)
 			part <- worldPart
 		}
-		world = [][]byte{}
+		nextWorld = [][]byte{}
 		for _, part := range parts {
-			world = append(world, <-part...)
+			nextWorld = append(nextWorld, <-part...)
 		}
+		world = nextWorld
 		c.events <- TurnComplete{
-			CompletedTurns: turn,
+			CompletedTurns: turn + 1,
 		}
 	}
+	ticker.Stop()
 
 	var aliveCells []util.Cell
 	for y, row := range world {
@@ -193,6 +223,19 @@ func distributor(p Params, c distributorChannels) {
 	c.events <- FinalTurnComplete{
 		CompletedTurns: turn,
 		Alive:          aliveCells,
+	}
+
+	outputFileName := fileName + "x" + strconv.Itoa(p.Turns)
+	c.ioCommand <- ioOutput
+	c.ioFileName <- outputFileName
+	for _, row := range world {
+		for _, element := range row {
+			c.ioOutput <- element
+		}
+	}
+	c.events <- ImageOutputComplete{ // implements Event
+		CompletedTurns: turn,
+		Filename:       outputFileName,
 	}
 	// Make sure that the Io has finished any output before exiting.
 	c.ioCommand <- ioCheckIdle
