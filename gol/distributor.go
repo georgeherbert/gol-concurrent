@@ -129,17 +129,17 @@ func worker(part chan [][]byte, events chan<- Event, startX int, startY int, end
 	part <- nextPart
 }
 
-func getPart(world [][]byte, threads int, threadNum int, startY int, endY int) [][]byte {
+func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][]byte {
 	var worldPart [][]byte
 	if threads == 1 {
 		worldPart = append(worldPart, world[len(world) - 1])
 		worldPart = append(worldPart, world...)
 		worldPart = append(worldPart, world[0])
 	} else {
-		if threadNum == 0 {
+		if partNum == 0 {
 			worldPart = append(worldPart, world[len(world)-1])
 			worldPart = append(worldPart, world[:endY + 1]...)
-		} else if threadNum == threads - 1 {
+		} else if partNum == threads - 1 {
 			worldPart = append(worldPart, world[startY - 1:]...)
 			worldPart = append(worldPart, world[0])
 		} else {
