@@ -36,8 +36,8 @@ func initialiseWorld(height int, width int, ioInput <-chan uint8, events chan<- 
 				events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{
-						X: y,
-						Y: x,
+						X: x,
+						Y: y,
 					},
 				}
 			}
@@ -92,45 +92,22 @@ func calculateValue(item byte, liveNeighbours int) byte {
 	return calculatedValue
 }
 
-// Returns the next state of a world given the current state
-func calculateNextState(world [][]byte, events chan<- Event) [][]byte {
+// Returns the next state of part of a world given the current state
+func calculateNextState(world [][]byte, events chan<- Event, startY int, endY int) [][]byte {
 	var nextWorld [][]byte
-	for y, row := range world {
+	for y, row := range world[startY: endY] {
 		nextWorld = append(nextWorld, []byte{})
 		for x, element := range row {
-			neighbours := getNeighbours(world, y, x)
+			neighbours := getNeighbours(world, y + startY, x)
 			liveNeighbours := calculateLiveNeighbours(neighbours)
 			value := calculateValue(element, liveNeighbours)
 			nextWorld[y] = append(nextWorld[y], value)
-			if value != world[y][x] {
-				events <- CellFlipped{
-					CompletedTurns: 0,
-					Cell: util.Cell{
-						X: y,
-						Y: x,
-					},
-				}
-			}
-		}
-	}
-	return nextWorld
-}
-
-func calculateNextStatePart(world [][]byte, events chan<- Event) [][]byte {
-	var nextWorld [][]byte
-	for y, row := range world {
-		nextWorld = append(nextWorld, []byte{})
-		for x, element := range row {
-			neighbours := getNeighbours(world, y, x)
-			liveNeighbours := calculateLiveNeighbours(neighbours)
-			value := calculateValue(element, liveNeighbours)
-			nextWorld[y] = append(nextWorld[y], value)
-			if value != world[y][x] {
+			if value != world[startY:endY][y][x] {
 				events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{
 						X: x,
-						Y: y,
+						Y: y + startY,
 					},
 				}
 			}
@@ -140,8 +117,8 @@ func calculateNextStatePart(world [][]byte, events chan<- Event) [][]byte {
 }
 
 func worker(part chan [][]byte, events chan<- Event, startX int, startY int, endX int, endY int) {
-	nextPart := calculateNextStatePart(<- part, events)
-	part <- nextPart[startY:endY]
+	nextPart := calculateNextState(<- part, events, startY, endY)
+	part <- nextPart
 }
 
 // Distributor divides the work between workers and interacts with other goroutines.
@@ -175,13 +152,6 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 
-	//var turn int
-	//for turn = 0; turn < p.Turns; turn++ {
-	//	world = calculateNextState(world, c.events)
-	//	c.events <- TurnComplete{
-	//		CompletedTurns: turn,
-	//	}
-	//}
 	var aliveCells []util.Cell
 	for y, row := range world {
 		for x, element := range row {
