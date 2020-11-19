@@ -164,7 +164,7 @@ func distributor(p Params, c distributorChannels) {
 		go worker(part, c.events, startY)
 	}
 
-	// For each turn, pass part of an image to each thread and process it, then put it back together and repeat
+	// For each turn, pass part of an image to each worker and process it, then put it back together and repeat
 	var turn int
 	for turn = 0; turn < p.Turns; turn++ {
 		for i, part := range parts {
