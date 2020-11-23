@@ -236,7 +236,6 @@ func distributor(p Params, c distributorChannels) {
 	}()
 	var stop bool
 	resume := make(chan bool)
-	//mutexStop := &sync.Mutex{}
 	// Key presses
 	go func() {
 		for {
@@ -293,7 +292,7 @@ func distributor(p Params, c distributorChannels) {
 		}
 		mutexTurnsWorld.Lock()
 		world = nextWorld
-		completedTurns = turn + 1
+		completedTurns = turn + 1 // turn + 1 because we are at the end of the turn (e.g. end of turn 0 means completed 1 turn)
 		mutexTurnsWorld.Unlock()
 		c.events <- TurnComplete{
 			CompletedTurns: completedTurns,
@@ -302,7 +301,7 @@ func distributor(p Params, c distributorChannels) {
 	ticker.Stop()
 	aliveCells := getAliveCells(world)
 	c.events <- FinalTurnComplete{
-		CompletedTurns: turn,
+		CompletedTurns: completedTurns,
 		Alive:          aliveCells,
 	}
 	writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
@@ -313,3 +312,9 @@ func distributor(p Params, c distributorChannels) {
 }
 
 // TODO: If tapping p fast, board freezes - work out why and fix it
+//Completed Turns 287     Paused
+//Completed Turns 287     Executing
+//Completed Turns 288     Paused
+//Completed Turns 288     Executing
+//Completed Turns 289     Paused
+//Completed Turns 288     Executing
