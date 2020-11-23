@@ -214,25 +214,29 @@ func distributor(p Params, c distributorChannels) {
 	}
 	var turn int
 	var completedTurns int
-	mutex := &sync.Mutex{}
+	mutexTurnsWorld := &sync.Mutex{}
 	pause := false
+	mutexPause := &sync.Mutex{}
 	ticker := time.NewTicker(2 * time.Second)
 	// Ticker
 	go func() {
 		for {
 			<-ticker.C
+			mutexPause.Lock()
 			if pause != true {
-				mutex.Lock()
+				mutexTurnsWorld.Lock()
 				c.events <- AliveCellsCount{
 					CompletedTurns: completedTurns,
 					CellsCount:     calcNumAliveCells(world),
 				}
-				mutex.Unlock()
+				mutexTurnsWorld.Unlock()
 			}
+			mutexPause.Unlock()
 		}
 	}()
 	var stop bool
 	resume := make(chan bool)
+	//mutexStop := &sync.Mutex{}
 	// Key presses
 	go func() {
 		for {
@@ -240,17 +244,25 @@ func distributor(p Params, c distributorChannels) {
 			if key == 115 { // s
 				writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
 			} else if key == 113 { // stop
+				mutexPause.Lock()
 				if pause != true {
 					stop = true
 				}
+				mutexPause.Unlock()
 			} else if key == 112 { // pause/resume
+				mutexPause.Lock()
 				if pause == true {
+					mutexTurnsWorld.Lock()
 					c.events <- StateChange{completedTurns, Executing}
+					mutexTurnsWorld.Unlock()
 					resume <- true
 				} else {
+					mutexTurnsWorld.Lock()
 					c.events <- StateChange{completedTurns + 1, Paused}
+					mutexTurnsWorld.Unlock()
 				}
 				pause = !pause
+				mutexPause.Unlock()
 			}
 		}
 	}()
@@ -259,8 +271,13 @@ func distributor(p Params, c distributorChannels) {
 	for turn = 0; turn < p.Turns; turn++ {
 		if stop == true {
 			break
-		} else if pause == true {
+		}
+		mutexPause.Lock()
+		if pause == true {
+			mutexPause.Unlock()
 			<-resume
+		} else {
+			mutexPause.Unlock()
 		}
 		for i, part := range parts {
 			startY := i * sectionHeight
@@ -272,10 +289,10 @@ func distributor(p Params, c distributorChannels) {
 		for _, part := range parts {
 			nextWorld = append(nextWorld, <-part...)
 		}
-		mutex.Lock()
+		mutexTurnsWorld.Lock()
 		world = nextWorld
 		completedTurns = turn + 1
-		mutex.Unlock()
+		mutexTurnsWorld.Unlock()
 		c.events <- TurnComplete{
 			CompletedTurns: completedTurns,
 		}
@@ -292,3 +309,6 @@ func distributor(p Params, c distributorChannels) {
 	c.events <- StateChange{turn, Quitting}
 	close(c.events) // Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 }
+
+// TODO: Remove data races when using keys
+// TODO: If tapping p fast, board freezes - work out why and fix it
