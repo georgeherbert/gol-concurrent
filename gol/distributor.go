@@ -235,7 +235,6 @@ func distributor(p Params, c distributorChannels) {
 	}()
 	var stop bool
 	resume := make(chan bool)
-	var newState State
 	go func() {
 		for {
 			select {
@@ -243,15 +242,16 @@ func distributor(p Params, c distributorChannels) {
 				if key == 115 {
 					writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
 				} else if key == 113 {
-					stop = true
+					if pause != true {
+						stop = true
+					}
 				} else if key == 112 {
 					if pause == true {
-						newState = Executing
+						c.events <- StateChange{completedTurns, Executing}
 						resume <- true
 					} else {
-						newState = Paused
+						c.events <- StateChange{completedTurns + 1, Paused}
 					}
-					c.events <- StateChange{completedTurns, newState}
 					pause = !pause
 				}
 			}
