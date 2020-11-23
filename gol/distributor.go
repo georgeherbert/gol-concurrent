@@ -215,9 +215,9 @@ func distributor(p Params, c distributorChannels) {
 	var turn int
 	var completedTurns int
 	mutex := &sync.Mutex{}
-	// Ticker
 	pause := false
 	ticker := time.NewTicker(2 * time.Second)
+	// Ticker
 	go func() {
 		for {
 			<-ticker.C
@@ -233,6 +233,7 @@ func distributor(p Params, c distributorChannels) {
 	}()
 	var stop bool
 	resume := make(chan bool)
+	// Key presses
 	go func() {
 		for {
 			key := <-c.keyPresses
@@ -253,8 +254,8 @@ func distributor(p Params, c distributorChannels) {
 			}
 		}
 	}()
-	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
 	var nextWorld [][]byte
+	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
 	for turn = 0; turn < p.Turns; turn++ {
 		if stop == true {
 			break
