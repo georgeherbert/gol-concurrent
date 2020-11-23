@@ -215,8 +215,9 @@ func distributor(p Params, c distributorChannels) {
 	var turn int
 	var completedTurns int
 	mutexTurnsWorld := &sync.Mutex{}
-	pause := false
 	mutexPause := &sync.Mutex{}
+	mutexStop := &sync.Mutex{}
+	pause := false
 	ticker := time.NewTicker(2 * time.Second)
 	// Ticker
 	go func() {
@@ -248,7 +249,9 @@ func distributor(p Params, c distributorChannels) {
 			} else if key == 113 { // stop
 				mutexPause.Lock()
 				if pause != true {
+					mutexStop.Lock()
 					stop = true
+					mutexStop.Unlock()
 				}
 				mutexPause.Unlock()
 			} else if key == 112 { // pause/resume
@@ -281,8 +284,12 @@ func distributor(p Params, c distributorChannels) {
 	var nextWorld [][]byte
 	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
 	for turn = 0; turn < p.Turns; turn++ {
+		mutexStop.Lock()
 		if stop == true {
+			mutexStop.Unlock()
 			break
+		} else {
+			mutexStop.Unlock()
 		}
 		mutexPause.Lock()
 		if pause == true {
