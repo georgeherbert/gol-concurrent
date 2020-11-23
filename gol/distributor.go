@@ -216,22 +216,24 @@ func distributor(p Params, c distributorChannels) {
 	var completedTurns int
 	mutex := &sync.Mutex{}
 	// Ticker
+	pause := false
 	ticker := time.NewTicker(2 * time.Second)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				mutex.Lock()
-				c.events <- AliveCellsCount{
-					CompletedTurns: completedTurns,
-					CellsCount: calcNumAliveCells(world),
+				if pause != true {
+					mutex.Lock()
+					c.events <- AliveCellsCount{
+						CompletedTurns: completedTurns,
+						CellsCount:     calcNumAliveCells(world),
+					}
+					mutex.Unlock()
 				}
-				mutex.Unlock()
 			}
 		}
 	}()
 	var stop bool
-	pause := false
 	resume := make(chan bool)
 	var newState State
 	go func() {
@@ -249,7 +251,7 @@ func distributor(p Params, c distributorChannels) {
 					} else {
 						newState = Paused
 					}
-					c.events <- StateChange{completedTurns + 1, newState}
+					c.events <- StateChange{completedTurns, newState}
 					pause = !pause
 				}
 			}
@@ -261,25 +263,24 @@ func distributor(p Params, c distributorChannels) {
 		if stop == true {
 			break
 		} else if pause == true {
-			<- resume
-		} else {
-			for i, part := range parts {
-				startY := i * sectionHeight
-				endY := startY + sectionHeight
-				worldPart := getPart(world, p.Threads, i, startY, endY)
-				part <- worldPart
-			}
-			nextWorld = [][]byte{}
-			for _, part := range parts {
-				nextWorld = append(nextWorld, <-part...)
-			}
-			mutex.Lock()
-			world = nextWorld
-			completedTurns = turn + 1
-			mutex.Unlock()
-			c.events <- TurnComplete{
-				CompletedTurns: completedTurns,
-			}
+			<-resume
+		}
+		for i, part := range parts {
+			startY := i * sectionHeight
+			endY := startY + sectionHeight
+			worldPart := getPart(world, p.Threads, i, startY, endY)
+			part <- worldPart
+		}
+		nextWorld = [][]byte{}
+		for _, part := range parts {
+			nextWorld = append(nextWorld, <-part...)
+		}
+		mutex.Lock()
+		world = nextWorld
+		completedTurns = turn + 1
+		mutex.Unlock()
+		c.events <- TurnComplete{
+			CompletedTurns: completedTurns,
 		}
 	}
 	ticker.Stop()
