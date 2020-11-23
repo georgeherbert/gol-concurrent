@@ -242,7 +242,9 @@ func distributor(p Params, c distributorChannels) {
 		for {
 			key := <-c.keyPresses
 			if key == 115 { // s
-				writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+				mutexTurnsWorld.Lock()
+				writeFile(world, fileName, completedTurns, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+				mutexTurnsWorld.Unlock()
 			} else if key == 113 { // stop
 				mutexPause.Lock()
 				if pause != true {
@@ -310,5 +312,4 @@ func distributor(p Params, c distributorChannels) {
 	close(c.events) // Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 }
 
-// TODO: Remove data races when using keys
 // TODO: If tapping p fast, board freezes - work out why and fix it
