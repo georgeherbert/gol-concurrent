@@ -2,9 +2,9 @@ package gol
 
 import (
 	"strconv"
+	"sync"
 	"time"
 	"uk.ac.bris.cs/gameoflife/util"
-	"sync"
 )
 
 type distributorChannels struct {
@@ -14,6 +14,7 @@ type distributorChannels struct {
 	ioFileName chan<- string
 	ioOutput   chan<- uint8
 	ioInput    <-chan uint8
+	keyPresses <-chan rune
 }
 
 // Sends the file name to io.go so the world can be initialised
@@ -218,7 +219,7 @@ func distributor(p Params, c distributorChannels) {
 	ticker := time.NewTicker(2 * time.Second)
 	go func() {
 		for {
-			select{
+			select {
 			case <-ticker.C:
 				mutex.Lock()
 				c.events <- AliveCellsCount{
@@ -229,25 +230,56 @@ func distributor(p Params, c distributorChannels) {
 			}
 		}
 	}()
+	var stop bool
+	pause := false
+	resume := make(chan bool)
+	var newState State
+	go func() {
+		for {
+			select {
+			case key := <-c.keyPresses:
+				if key == 115 {
+					writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+				} else if key == 113 {
+					stop = true
+				} else if key == 112 {
+					if pause == true {
+						newState = Executing
+						resume <- true
+					} else {
+						newState = Paused
+					}
+					c.events <- StateChange{completedTurns + 1, newState}
+					pause = !pause
+				}
+			}
+		}
+	}()
 	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
 	var nextWorld [][]byte
 	for turn = 0; turn < p.Turns; turn++ {
-		for i, part := range parts {
-			startY := i * sectionHeight
-			endY := startY + sectionHeight
-			worldPart := getPart(world, p.Threads, i, startY, endY)
-			part <- worldPart
-		}
-		nextWorld = [][]byte{}
-		for _, part := range parts {
-			nextWorld = append(nextWorld, <-part...)
-		}
-		mutex.Lock()
-		world = nextWorld
-		completedTurns = turn + 1
-		mutex.Unlock()
-		c.events <- TurnComplete{
-			CompletedTurns: completedTurns,
+		if stop == true {
+			break
+		} else if pause == true {
+			<- resume
+		} else {
+			for i, part := range parts {
+				startY := i * sectionHeight
+				endY := startY + sectionHeight
+				worldPart := getPart(world, p.Threads, i, startY, endY)
+				part <- worldPart
+			}
+			nextWorld = [][]byte{}
+			for _, part := range parts {
+				nextWorld = append(nextWorld, <-part...)
+			}
+			mutex.Lock()
+			world = nextWorld
+			completedTurns = turn + 1
+			mutex.Unlock()
+			c.events <- TurnComplete{
+				CompletedTurns: completedTurns,
+			}
 		}
 	}
 	ticker.Stop()
