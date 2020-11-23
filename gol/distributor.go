@@ -236,13 +236,13 @@ func distributor(p Params, c distributorChannels) {
 	go func() {
 		for {
 			key := <-c.keyPresses
-			if key == 115 {
+			if key == 115 { // s
 				writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
-			} else if key == 113 {
+			} else if key == 113 { // stop
 				if pause != true {
 					stop = true
 				}
-			} else if key == 112 {
+			} else if key == 112 { // pause/resume
 				if pause == true {
 					c.events <- StateChange{completedTurns, Executing}
 					resume <- true
