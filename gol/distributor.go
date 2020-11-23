@@ -262,7 +262,7 @@ func distributor(p Params, c distributorChannels) {
 						mutexTurnsWorld.Lock()
 						mutexPause.Lock()
 					}
-					c.events <- StateChange{completedTurns, Executing}
+					c.events <- StateChange{completedTurns, Continuing}
 					mutexPause.Unlock() // Unlocks to let the loop for each turn to get to the block of code where it is waiting to be resumed
 					resume <- true
 					mutexPause.Lock()
