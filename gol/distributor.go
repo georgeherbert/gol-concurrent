@@ -238,9 +238,10 @@ func distributor(p Params, c distributorChannels) {
 	resume := make(chan bool)
 	// Key presses
 	go func() {
+		var lastCompletedTurn int // Needed to stop the program resuming before the turn paused on has complete as would cause deadlock
 		for {
 			key := <-c.keyPresses
-			if key == 115 { // s
+			if key == 115 { // save
 				mutexTurnsWorld.Lock()
 				writeFile(world, fileName, completedTurns, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
 				mutexTurnsWorld.Unlock()
@@ -254,12 +255,22 @@ func distributor(p Params, c distributorChannels) {
 				mutexPause.Lock()
 				if pause == true {
 					mutexTurnsWorld.Lock()
+					// This loop isn't the most elegant solution, but it prevents a deadlock from occurring if pause is repeatedly pressed very quickly
+					for lastCompletedTurn != completedTurns - 1 {
+						mutexTurnsWorld.Unlock()
+						mutexPause.Unlock()
+						mutexTurnsWorld.Lock()
+						mutexPause.Lock()
+					}
 					c.events <- StateChange{completedTurns, Executing}
-					mutexTurnsWorld.Unlock()
+					mutexPause.Unlock() // Unlocks to let the loop for each turn to get to the block of code where it is waiting to be resumed
 					resume <- true
+					mutexPause.Lock()
+					mutexTurnsWorld.Unlock()
 				} else {
 					mutexTurnsWorld.Lock()
 					c.events <- StateChange{completedTurns + 1, Paused}
+					lastCompletedTurn = completedTurns
 					mutexTurnsWorld.Unlock()
 				}
 				pause = !pause
@@ -306,17 +317,9 @@ func distributor(p Params, c distributorChannels) {
 		Alive:          aliveCells,
 	}
 	writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
-	mutexTurnsWorld.Unlock()
 	c.ioCommand <- ioCheckIdle // Make sure that the Io has finished any output before exiting.
 	<-c.ioIdle
-	c.events <- StateChange{turn, Quitting}
+	c.events <- StateChange{completedTurns, Quitting}
+	mutexTurnsWorld.Unlock()
 	close(c.events) // Close the channel to stop the SDL goroutine gracefully. Removing may cause deadlock.
 }
-
-// TODO: If tapping p fast, board freezes - work out why and fix it
-//Completed Turns 287     Paused
-//Completed Turns 287     Executing
-//Completed Turns 288     Paused
-//Completed Turns 288     Executing
-//Completed Turns 289     Paused
-//Completed Turns 288     Executing
