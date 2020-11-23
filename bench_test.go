@@ -7,20 +7,19 @@ import (
 	"uk.ac.bris.cs/gameoflife/gol"
 )
 
-const (
-	start = 512
-	end   = 16384
-)
+func getSizes() []int {
+	return []int{16, 64, 128, 256, 512}
+}
 
-func BenchmarkSequential(b *testing.B) {
-	for size := start; size <= end; size *= 2 {
+func BenchmarkParallel(b *testing.B) {
+	for _, size := range getSizes() {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			os.Stdout = nil // Disable all program output apart from benchmark results
 			params := gol.Params{
-				Turns: 20,
-				Threads: 1,
-				ImageWidth: 64,
-				ImageHeight: 64,
+				Turns:       10,
+				Threads:     8,
+				ImageWidth:  size,
+				ImageHeight: size,
 			}
 			keyPresses := make(chan rune, 10)
 			events := make(chan gol.Event, 1000)
@@ -33,15 +32,15 @@ func BenchmarkSequential(b *testing.B) {
 	}
 }
 
-func BenchmarkParallel(b *testing.B) {
-	for size := start; size <= end; size *= 2 {
+func BenchmarkSequential(b *testing.B) {
+	for _, size := range getSizes() {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			os.Stdout = nil // Disable all program output apart from benchmark results
 			params := gol.Params{
-				Turns: 20,
-				Threads: 2,
-				ImageWidth: 64,
-				ImageHeight: 64,
+				Turns:       10,
+				Threads:     1,
+				ImageWidth:  size,
+				ImageHeight: size,
 			}
 			keyPresses := make(chan rune, 10)
 			events := make(chan gol.Event, 1000)
