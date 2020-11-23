@@ -299,12 +299,14 @@ func distributor(p Params, c distributorChannels) {
 		}
 	}
 	ticker.Stop()
+	mutexTurnsWorld.Lock()
 	aliveCells := getAliveCells(world)
 	c.events <- FinalTurnComplete{
 		CompletedTurns: completedTurns,
 		Alive:          aliveCells,
 	}
 	writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+	mutexTurnsWorld.Unlock()
 	c.ioCommand <- ioCheckIdle // Make sure that the Io has finished any output before exiting.
 	<-c.ioIdle
 	c.events <- StateChange{turn, Quitting}
