@@ -220,16 +220,14 @@ func distributor(p Params, c distributorChannels) {
 	ticker := time.NewTicker(2 * time.Second)
 	go func() {
 		for {
-			select {
-			case <-ticker.C:
-				if pause != true {
-					mutex.Lock()
-					c.events <- AliveCellsCount{
-						CompletedTurns: completedTurns,
-						CellsCount:     calcNumAliveCells(world),
-					}
-					mutex.Unlock()
+			<-ticker.C
+			if pause != true {
+				mutex.Lock()
+				c.events <- AliveCellsCount{
+					CompletedTurns: completedTurns,
+					CellsCount:     calcNumAliveCells(world),
 				}
+				mutex.Unlock()
 			}
 		}
 	}()
@@ -237,23 +235,21 @@ func distributor(p Params, c distributorChannels) {
 	resume := make(chan bool)
 	go func() {
 		for {
-			select {
-			case key := <-c.keyPresses:
-				if key == 115 {
-					writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
-				} else if key == 113 {
-					if pause != true {
-						stop = true
-					}
-				} else if key == 112 {
-					if pause == true {
-						c.events <- StateChange{completedTurns, Executing}
-						resume <- true
-					} else {
-						c.events <- StateChange{completedTurns + 1, Paused}
-					}
-					pause = !pause
+			key := <-c.keyPresses
+			if key == 115 {
+				writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+			} else if key == 113 {
+				if pause != true {
+					stop = true
 				}
+			} else if key == 112 {
+				if pause == true {
+					c.events <- StateChange{completedTurns, Executing}
+					resume <- true
+				} else {
+					c.events <- StateChange{completedTurns + 1, Paused}
+				}
+				pause = !pause
 			}
 		}
 	}()
