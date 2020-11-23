@@ -215,31 +215,24 @@ func distributor(p Params, c distributorChannels) {
 	var turn int
 	var completedTurns int
 	mutexTurnsWorld := &sync.Mutex{}
-	mutexPause := &sync.Mutex{}
-	mutexStop := &sync.Mutex{}
-	pause := false
-	var stop bool
-	resume := make(chan bool)
 	ticker := time.NewTicker(2 * time.Second)
 	// Ticker
 	go func() {
 		for {
 			<-ticker.C
-			mutexPause.Lock()
-			if pause != true {
-				mutexTurnsWorld.Lock()
-				c.events <- AliveCellsCount{
-					CompletedTurns: completedTurns,
-					CellsCount:     calcNumAliveCells(world),
-				}
-				mutexTurnsWorld.Unlock()
+			mutexTurnsWorld.Lock()
+			c.events <- AliveCellsCount{
+				CompletedTurns: completedTurns,
+				CellsCount:     calcNumAliveCells(world),
 			}
-			mutexPause.Unlock()
+			mutexTurnsWorld.Unlock()
 		}
 	}()
+	stop := make(chan bool)
+	pause := make(chan bool)
 	// Key presses
 	go func() {
-		var lastCompletedTurn int // Needed to stop the program resuming before the turn paused on has complete as would cause deadlock
+		paused := false
 		for {
 			key := <-c.keyPresses
 			if key == 115 { // save
@@ -247,75 +240,53 @@ func distributor(p Params, c distributorChannels) {
 				writeFile(world, fileName, completedTurns, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
 				mutexTurnsWorld.Unlock()
 			} else if key == 113 { // stop
-				mutexPause.Lock()
-				if pause != true {
-					mutexStop.Lock()
-					stop = true
-					mutexStop.Unlock()
-				}
-				mutexPause.Unlock()
+				stop <- true
 			} else if key == 112 { // pause/resume
-				mutexPause.Lock()
-				if pause == true {
+				if paused {
 					mutexTurnsWorld.Lock()
-					// This loop isn't the most elegant solution, but it prevents a deadlock from occurring if pause is repeatedly pressed very quickly
-					for lastCompletedTurn != completedTurns - 1 {
-						mutexTurnsWorld.Unlock()
-						mutexPause.Unlock()
-						mutexTurnsWorld.Lock()
-						mutexPause.Lock()
-					}
 					c.events <- StateChange{completedTurns, Continuing}
-					mutexPause.Unlock() // Unlocks to let the loop for each turn to get to the block of code where it is waiting to be resumed
-					resume <- true
-					mutexPause.Lock()
 					mutexTurnsWorld.Unlock()
+					pause <- false
+					paused = false
 				} else {
+					pause <- true
+					paused = true
 					mutexTurnsWorld.Lock()
-					c.events <- StateChange{completedTurns + 1, Paused}
-					lastCompletedTurn = completedTurns
+					c.events <- StateChange{completedTurns, Paused}
 					mutexTurnsWorld.Unlock()
 				}
-				pause = !pause
-				mutexPause.Unlock()
 			}
 		}
 	}()
 	var nextWorld [][]byte
 	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
-	for turn = 0; turn < p.Turns; turn++ {
-		mutexStop.Lock()
-		if stop == true {
-			mutexStop.Unlock()
-			break
-		} else {
-			mutexStop.Unlock()
+	turnsLoop:
+		for turn = 0; turn < p.Turns; turn++ {
+			select {
+			case <-stop:
+				break turnsLoop
+			case <-pause:
+				<-pause
+			default:
+			}
+			for i, part := range parts {
+				startY := i * sectionHeight
+				endY := startY + sectionHeight
+				worldPart := getPart(world, p.Threads, i, startY, endY)
+				part <- worldPart
+			}
+			nextWorld = [][]byte{}
+			for _, part := range parts {
+				nextWorld = append(nextWorld, <-part...)
+			}
+			mutexTurnsWorld.Lock()
+			world = nextWorld
+			completedTurns = turn + 1 // turn + 1 because we are at the end of the turn (e.g. end of turn 0 means completed 1 turn)
+			mutexTurnsWorld.Unlock()
+			c.events <- TurnComplete{
+				CompletedTurns: completedTurns,
+			}
 		}
-		mutexPause.Lock()
-		if pause == true {
-			mutexPause.Unlock()
-			<-resume
-		} else {
-			mutexPause.Unlock()
-		}
-		for i, part := range parts {
-			startY := i * sectionHeight
-			endY := startY + sectionHeight
-			worldPart := getPart(world, p.Threads, i, startY, endY)
-			part <- worldPart
-		}
-		nextWorld = [][]byte{}
-		for _, part := range parts {
-			nextWorld = append(nextWorld, <-part...)
-		}
-		mutexTurnsWorld.Lock()
-		world = nextWorld
-		completedTurns = turn + 1 // turn + 1 because we are at the end of the turn (e.g. end of turn 0 means completed 1 turn)
-		mutexTurnsWorld.Unlock()
-		c.events <- TurnComplete{
-			CompletedTurns: completedTurns,
-		}
-	}
 	ticker.Stop()
 	mutexTurnsWorld.Lock()
 	aliveCells := getAliveCells(world)
