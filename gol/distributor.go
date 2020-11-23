@@ -242,19 +242,18 @@ func distributor(p Params, c distributorChannels) {
 			} else if key == 113 { // stop
 				stop <- true
 			} else if key == 112 { // pause/resume
+				pause <- true
+				var newState State
 				if paused {
-					mutexTurnsWorld.Lock()
-					c.events <- StateChange{completedTurns, Continuing}
-					mutexTurnsWorld.Unlock()
-					pause <- false
+					newState = Continuing
 					paused = false
 				} else {
-					pause <- true
+					newState = Paused
 					paused = true
-					mutexTurnsWorld.Lock()
-					c.events <- StateChange{completedTurns, Paused}
-					mutexTurnsWorld.Unlock()
 				}
+				mutexTurnsWorld.Lock()
+				c.events <- StateChange{completedTurns, newState}
+				mutexTurnsWorld.Unlock()
 			}
 		}
 	}()
@@ -266,7 +265,11 @@ func distributor(p Params, c distributorChannels) {
 			case <-stop:
 				break turnsLoop
 			case <-pause:
-				<-pause
+				select {
+				case <-stop:
+					break turnsLoop
+				case <-pause:
+				}
 			default:
 			}
 			for i, part := range parts {
