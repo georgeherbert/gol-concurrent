@@ -218,6 +218,8 @@ func distributor(p Params, c distributorChannels) {
 	mutexPause := &sync.Mutex{}
 	mutexStop := &sync.Mutex{}
 	pause := false
+	var stop bool
+	resume := make(chan bool)
 	ticker := time.NewTicker(2 * time.Second)
 	// Ticker
 	go func() {
@@ -235,8 +237,6 @@ func distributor(p Params, c distributorChannels) {
 			mutexPause.Unlock()
 		}
 	}()
-	var stop bool
-	resume := make(chan bool)
 	// Key presses
 	go func() {
 		var lastCompletedTurn int // Needed to stop the program resuming before the turn paused on has complete as would cause deadlock
