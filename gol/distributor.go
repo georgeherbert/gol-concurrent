@@ -50,6 +50,7 @@ func initialiseWorld(height int, width int, ioInput <-chan uint8, events chan<- 
 	return world
 }
 
+// Returns a slice of channels, that will each be used to communicate a section of the world between the distributor and a worker
 func createPartChannels(numOfThreads int) []chan [][]byte{
 	var parts []chan [][]byte
 	for i := 0; i < numOfThreads; i++ {
