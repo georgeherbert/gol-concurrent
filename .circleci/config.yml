@@ -22,5 +22,7 @@ jobs:
       - checkout
 
       # specify any bash command here prefixed with `run: `
-      #- run: go get -v -t -d ./...
+      - run: go get uk.ac.bris.cs/gameoflife/util
+      - run: go get uk.ac.bris.cs/gameoflife/gol
+      - run: go get github.com/veandco/go-sdl2/sdl
       - run: go test -v ./...
