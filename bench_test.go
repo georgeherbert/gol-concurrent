@@ -8,7 +8,7 @@ import (
 )
 
 func theTest (b *testing.B, threads int) {
-	b.Run(fmt.Sprint(thread), func(b *testing.B) {
+	b.Run(fmt.Sprint(threads), func(b *testing.B) {
 		os.Stdout = nil // Disable all program output apart from benchmark results
 		params := gol.Params{
 			Turns:       1000,
