@@ -7,7 +7,7 @@ import (
 	"uk.ac.bris.cs/gameoflife/gol"
 )
 
-func theTest (b *testing.B, threads int) {
+func benchmarkGol (threads int, b *testing.B) {
 	b.Run(fmt.Sprint(threads), func(b *testing.B) {
 		os.Stdout = nil // Disable all program output apart from benchmark results
 		params := gol.Params{
@@ -26,68 +26,21 @@ func theTest (b *testing.B, threads int) {
 	})
 }
 
-func BenchmarkThreads1(b *testing.B) {
-	theTest(b, 1)
-}
-
-func BenchmarkThreads2(b *testing.B) {
-	theTest(b, 2)
-}
-
-func BenchmarkThreads3(b *testing.B) {
-	theTest(b, 3)
-}
-
-func BenchmarkThreads4(b *testing.B) {
-	theTest(b, 4)
-}
-
-func BenchmarkThreads5(b *testing.B) {
-	theTest(b, 5)
-}
-
-func BenchmarkThreads6(b *testing.B) {
-	theTest(b, 6)
-}
-
-func BenchmarkThreads7(b *testing.B) {
-	theTest(b, 7)
-}
-
-func BenchmarkThreads8(b *testing.B) {
-	theTest(b, 8)
-}
-
-func BenchmarkThreads9(b *testing.B) {
-	theTest(b, 9)
-}
-
-func BenchmarkThreads10(b *testing.B) {
-	theTest(b, 10)
-}
-
-func BenchmarkThreads11(b *testing.B) {
-	theTest(b, 11)
-}
-
-func BenchmarkThreads12(b *testing.B) {
-	theTest(b, 12)
-}
-
-func BenchmarkThreads13(b *testing.B) {
-	theTest(b, 13)
-}
-
-func BenchmarkThreads14(b *testing.B) {
-	theTest(b, 14)
-}
-
-func BenchmarkThreads15(b *testing.B) {
-	theTest(b, 15)
-}
-
-func BenchmarkThreads16(b *testing.B) {
-	theTest(b, 16)
-}
+func BenchmarkThreads1(b *testing.B) { benchmarkGol(1, b) }
+func BenchmarkThreads2(b *testing.B) { benchmarkGol(2, b) }
+func BenchmarkThreads3(b *testing.B) { benchmarkGol(3, b) }
+func BenchmarkThreads4(b *testing.B) { benchmarkGol(4, b) }
+func BenchmarkThreads5(b *testing.B) { benchmarkGol(5, b) }
+func BenchmarkThreads6(b *testing.B) { benchmarkGol(6, b) }
+func BenchmarkThreads7(b *testing.B) { benchmarkGol(7, b) }
+func BenchmarkThreads8(b *testing.B) { benchmarkGol(8, b) }
+func BenchmarkThreads9(b *testing.B) { benchmarkGol(9, b) }
+func BenchmarkThreads10(b *testing.B) { benchmarkGol(10, b) }
+func BenchmarkThreads11(b *testing.B) { benchmarkGol(11, b) }
+func BenchmarkThreads12(b *testing.B) { benchmarkGol(12, b) }
+func BenchmarkThreads13(b *testing.B) { benchmarkGol(13, b) }
+func BenchmarkThreads14(b *testing.B) { benchmarkGol(14, b) }
+func BenchmarkThreads15(b *testing.B) { benchmarkGol(15, b) }
+func BenchmarkThreads16(b *testing.B) { benchmarkGol(16, b) }
 
 // Run with "go test -bench . bench_test.go
