@@ -8,7 +8,7 @@ import (
 )
 
 func BenchmarkGol (b *testing.B) {
-	for thread := 1; thread <= 64; thread++ {
+	for thread := 1; thread <= 128; thread++ {
 		b.Run(fmt.Sprint(thread), func(b *testing.B) {
 			os.Stdout = nil // Disable all program output apart from benchmark results
 			params := gol.Params{
