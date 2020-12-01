@@ -11,16 +11,16 @@ func benchmarkGol (threads int, b *testing.B) {
 	b.Run(fmt.Sprint(threads), func(b *testing.B) {
 		os.Stdout = nil // Disable all program output apart from benchmark results
 		params := gol.Params{
-			Turns:       1000,
+			Turns:       100,
 			Threads:     threads,
 			ImageWidth:  512,
 			ImageHeight: 512,
 		}
 		for i := 0; i < b.N; i++ {
-			keyPresses := make(chan rune, 10)
-			events := make(chan gol.Event, 1000)
+			events := make(chan gol.Event)
 			b.StartTimer()
-			gol.Run(params, events, keyPresses)
+			gol.Run(params, events, nil)
+			for range events{}
 			b.StopTimer()
 		}
 	})
