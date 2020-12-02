@@ -26,14 +26,14 @@ func sendFileName(fileName string, ioCommand chan<- ioCommand, ioFileName chan<-
 // Returns the world with its initial values filled
 func initialiseWorld(height int, width int, ioInput <-chan uint8, events chan<- Event) [][]byte {
 	world := make([][]byte, height)
-	for y := range world {
+	for y := range world { // Create an array of bytes for each row
 		world[y] = make([]byte, width)
 	}
 	for y, row := range world {
 		for x := range row {
 			cell := <-ioInput
-			world[y][x] = cell
-			if cell == 255 {
+			world[y][x] = cell // Add each cell to the row
+			if cell == 255 { // If the cell is alive send a cellFlipped event
 				events <- CellFlipped{
 					CompletedTurns: 0,
 					Cell: util.Cell{
@@ -137,14 +137,14 @@ func calcValue(item byte, liveNeighbours int) byte {
 // Returns the next state of part of a world given the current state
 func calcNextState(world [][]byte, events chan<- Event, startY int, turn int) [][]byte {
 	var nextWorld [][]byte
-	for y, row := range world[1:len(world) - 1] {
+	for y, row := range world[1:len(world) - 1] { // Loops over each row apart from the top and bottom row
 		nextWorld = append(nextWorld, []byte{})
 		for x, element := range row {
 			neighbours := getNeighbours(world, y + 1, x)
 			liveNeighbours := calcLiveNeighbours(neighbours)
 			value := calcValue(element, liveNeighbours)
 			nextWorld[y] = append(nextWorld[y], value)
-			if value != world[y + 1][x] {
+			if value != world[y + 1][x] { // If the value of the cell has changed send a cell flipped event
 				events <- CellFlipped{
 					CompletedTurns: turn,
 					Cell: util.Cell{
@@ -212,6 +212,43 @@ func handleKeyPresses(keyPresses <-chan rune, mutexTurnsWorld *sync.Mutex, world
 	}
 }
 
+// Performs the specified number of turns of the world
+func performAllTurns(turns int, stop <-chan bool, pause <-chan bool, parts []chan [][]byte, startYValues []int,
+	sectionHeights []int, world *[][]byte, threads int, mutexTurnsWorld *sync.Mutex, completedTurns *int, events chan<- Event) {
+	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
+	turnsLoop:
+		for turn := 0; turn < turns; turn++ {
+			select {
+			case <-stop:
+				break turnsLoop
+			case <-pause:
+				select {
+				case <-stop:
+					break turnsLoop
+				case <-pause:
+				}
+			default: // If no keys have been pressed just move onto performing the next turn of the world
+			}
+			for i, part := range parts { // Send the next part to each worker
+				startY := startYValues[i]
+				endY := startY + sectionHeights[i]
+				worldPart := getPart(*world, threads, i, startY, endY)
+				part <- worldPart
+			}
+			var nextWorld [][]byte
+			for _, part := range parts { // Collect each part from each worker and build the next state of the world
+				nextWorld = append(nextWorld, <-part...)
+			}
+			mutexTurnsWorld.Lock()
+			*world = nextWorld
+			*completedTurns = turn + 1 // turn + 1 because we are at the end of the turn (e.g. end of turn 0 means completed 1 turn)
+			mutexTurnsWorld.Unlock()
+			events <- TurnComplete{
+				CompletedTurns: *completedTurns,
+			}
+	}
+}
+
 // Returns the number of alive cells in a world
 func calcNumAliveCells(world [][]byte) int {
 	total := 0
@@ -228,15 +265,15 @@ func calcNumAliveCells(world [][]byte) int {
 // Returns part of a world given the number of threads, the part number, the startY, and the endY
 func getPart(world [][]byte, threads int, partNum int, startY int, endY int) [][]byte {
 	var worldPart [][]byte
-	if threads == 1 {
+	if threads == 1 { // Having 1 thread is a special case as the top and bottom row will come from the same part
 		worldPart = append(worldPart, world[len(world) - 1])
 		worldPart = append(worldPart, world...)
 		worldPart = append(worldPart, world[0])
 	} else {
-		if partNum == 0 {
+		if partNum == 0 { // If it is the first part add the bottom row of the world as the top row
 			worldPart = append(worldPart, world[len(world)-1])
 			worldPart = append(worldPart, world[:endY + 1]...)
-		} else if partNum == threads - 1 {
+		} else if partNum == threads - 1 { // If it is the last part add the top row of the world as the bottom row
 			worldPart = append(worldPart, world[startY - 1:]...)
 			worldPart = append(worldPart, world[0])
 		} else {
@@ -284,60 +321,27 @@ func distributor(p Params, c distributorChannels) {
 	parts := createPartChannels(p.Threads)
 	sectionHeights := calcSectionHeights(p.ImageHeight, p.Threads)
 	startYValues := calcStartYValues(sectionHeights)
-	for i, part := range parts {
+	for i, part := range parts { // Starts the workers ready to receive parts to calculate the next state of
 		go worker(part, c.events, startYValues[i], p.Turns)
 	}
-	var turn int
 	var completedTurns int
 	mutexTurnsWorld := &sync.Mutex{}
 	twoSecondTicker := time.NewTicker(2 * time.Second)
-	go ticker(twoSecondTicker, mutexTurnsWorld, &completedTurns, &world, c.events)
+	go ticker(twoSecondTicker, mutexTurnsWorld, &completedTurns, &world, c.events) // Runs the ticker
 	stop := make(chan bool)
 	pause := make(chan bool)
-	// Key presses
 	go handleKeyPresses(c.keyPresses, mutexTurnsWorld, &world, fileName, &completedTurns, c.ioCommand, c.ioFileName,
-		c.ioOutput, c.events, stop, pause)
-	var nextWorld [][]byte
-	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
-	turnsLoop:
-		for turn = 0; turn < p.Turns; turn++ {
-			select {
-			case <-stop:
-				break turnsLoop
-			case <-pause:
-				select {
-				case <-stop:
-					break turnsLoop
-				case <-pause:
-				}
-			default:
-			}
-			for i, part := range parts {
-				startY := startYValues[i]
-				endY := startY + sectionHeights[i]
-				worldPart := getPart(world, p.Threads, i, startY, endY)
-				part <- worldPart
-			}
-			nextWorld = [][]byte{}
-			for _, part := range parts {
-				nextWorld = append(nextWorld, <-part...)
-			}
-			mutexTurnsWorld.Lock()
-			world = nextWorld
-			completedTurns = turn + 1 // turn + 1 because we are at the end of the turn (e.g. end of turn 0 means completed 1 turn)
-			mutexTurnsWorld.Unlock()
-			c.events <- TurnComplete{
-				CompletedTurns: completedTurns,
-			}
-		}
-	twoSecondTicker.Stop()
+		c.ioOutput, c.events, stop, pause) // Handles key presses for the user
+	performAllTurns(p.Turns, stop, pause, parts, startYValues, sectionHeights, &world, p.Threads, mutexTurnsWorld,
+		&completedTurns, c.events)
+	twoSecondTicker.Stop() // The ticker stops running once all turns have been performed
 	mutexTurnsWorld.Lock()
 	aliveCells := getAliveCells(world)
-	c.events <- FinalTurnComplete{
+	c.events <- FinalTurnComplete{ // Send a final turn complete event to the events channel
 		CompletedTurns: completedTurns,
 		Alive:          aliveCells,
 	}
-	writeFile(world, fileName, turn, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
+	writeFile(world, fileName, completedTurns, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
 	c.ioCommand <- ioCheckIdle // Make sure that the Io has finished any output before exiting.
 	<-c.ioIdle
 	c.events <- StateChange{completedTurns, Quitting}
