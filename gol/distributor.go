@@ -321,7 +321,7 @@ func distributor(p Params, c distributorChannels) {
 	parts := createPartChannels(p.Threads)
 	sectionHeights := calcSectionHeights(p.ImageHeight, p.Threads)
 	startYValues := calcStartYValues(sectionHeights)
-	for i, part := range parts { // Starts the workers ready to receive parts to calculate the next state of
+	for i, part := range parts { // Starts the workers ready to receive parts to calculate the next state
 		go worker(part, c.events, startYValues[i], p.Turns)
 	}
 	var completedTurns int
