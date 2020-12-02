@@ -59,6 +59,35 @@ func createPartChannels(numOfThreads int) []chan [][]byte{
 	return parts
 }
 
+// Returns a slice containing the height of each section that each worker will process
+func calcSectionHeights(height int, threads int) []int {
+	heightOfParts := make([]int, threads)
+	for i := range heightOfParts{
+		heightOfParts[i] = 0
+	}
+	partAssigning := 0
+	for i := 0; i < height; i++ {
+		heightOfParts[partAssigning] += 1
+		if partAssigning == len(heightOfParts) - 1 {
+			partAssigning = 0
+		} else {
+			partAssigning += 1
+		}
+	}
+	return heightOfParts
+}
+
+// Returns a slice containing the initial y-values of the parts of the world that each worker will process
+func calcStartYValues(sectionHeights []int) []int {
+	startYValues := make([]int, len(sectionHeights))
+	totalHeightAssigned := 0
+	for i, height := range sectionHeights {
+		startYValues[i] = totalHeightAssigned
+		totalHeightAssigned += height
+	}
+	return startYValues
+}
+
 // Returns the neighbours of a cell at given coordinates
 func getNeighbours(world [][]byte, row int, column int) []byte {
 	rowAbove, rowBelow := row - 1, row + 1
@@ -253,10 +282,10 @@ func distributor(p Params, c distributorChannels) {
 	sendFileName(fileName, c.ioCommand, c.ioFileName)
 	world := initialiseWorld(p.ImageHeight, p.ImageWidth, c.ioInput, c.events)
 	parts := createPartChannels(p.Threads)
-	sectionHeight := p.ImageHeight / p.Threads
+	sectionHeights := calcSectionHeights(p.ImageHeight, p.Threads)
+	startYValues := calcStartYValues(sectionHeights)
 	for i, part := range parts {
-		startY := i * sectionHeight
-		go worker(part, c.events, startY, p.Turns)
+		go worker(part, c.events, startYValues[i], p.Turns)
 	}
 	var turn int
 	var completedTurns int
@@ -284,8 +313,8 @@ func distributor(p Params, c distributorChannels) {
 			default:
 			}
 			for i, part := range parts {
-				startY := i * sectionHeight
-				endY := startY + sectionHeight
+				startY := startYValues[i]
+				endY := startY + sectionHeights[i]
 				worldPart := getPart(world, p.Threads, i, startY, endY)
 				part <- worldPart
 			}
