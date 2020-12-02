@@ -138,6 +138,51 @@ func worker(part chan [][]byte, events chan<- Event, startY int, turns int) {
 	}
 }
 
+// Reports the number of alive cells every 2 seconds
+func ticker(twoSecondTicker *time.Ticker, mutexTurnsWorld *sync.Mutex, completedTurns *int, world *[][]byte, events chan<- Event) {
+	go func() {
+		for {
+			<-twoSecondTicker.C
+			mutexTurnsWorld.Lock()
+			events <- AliveCellsCount{
+				CompletedTurns: *completedTurns,
+				CellsCount:     calcNumAliveCells(*world),
+			}
+			mutexTurnsWorld.Unlock()
+		}
+	}()
+}
+
+// Receives key presses from the user and performs the appropriate action
+func handleKeyPresses(keyPresses <-chan rune, mutexTurnsWorld *sync.Mutex, world *[][]byte, fileName string,
+	completedTurns *int, ioCommand chan<- ioCommand, ioFileName chan<- string, ioOutput chan<- uint8,
+	events chan<- Event, stop chan<- bool, pause chan<- bool) {
+	paused := false
+	for {
+		key := <-keyPresses
+		if key == 115 { // save
+			mutexTurnsWorld.Lock()
+			writeFile(*world, fileName, *completedTurns, ioCommand, ioFileName, ioOutput, events)
+			mutexTurnsWorld.Unlock()
+		} else if key == 113 { // stop
+			stop <- true
+		} else if key == 112 { // pause/resume
+			pause <- true
+			var newState State
+			if paused {
+				newState = Continuing
+				paused = false
+			} else {
+				newState = Paused
+				paused = true
+			}
+			mutexTurnsWorld.Lock()
+			events <- StateChange{*completedTurns, newState}
+			mutexTurnsWorld.Unlock()
+		}
+	}
+}
+
 // Returns the number of alive cells in a world
 func calcNumAliveCells(world [][]byte) int {
 	total := 0
@@ -216,48 +261,13 @@ func distributor(p Params, c distributorChannels) {
 	var turn int
 	var completedTurns int
 	mutexTurnsWorld := &sync.Mutex{}
-	ticker := time.NewTicker(2 * time.Second)
-	// Ticker
-	go func() {
-		for {
-			<-ticker.C
-			mutexTurnsWorld.Lock()
-			c.events <- AliveCellsCount{
-				CompletedTurns: completedTurns,
-				CellsCount:     calcNumAliveCells(world),
-			}
-			mutexTurnsWorld.Unlock()
-		}
-	}()
+	twoSecondTicker := time.NewTicker(2 * time.Second)
+	go ticker(twoSecondTicker, mutexTurnsWorld, &completedTurns, &world, c.events)
 	stop := make(chan bool)
 	pause := make(chan bool)
 	// Key presses
-	go func() {
-		paused := false
-		for {
-			key := <-c.keyPresses
-			if key == 115 { // save
-				mutexTurnsWorld.Lock()
-				writeFile(world, fileName, completedTurns, c.ioCommand, c.ioFileName, c.ioOutput, c.events)
-				mutexTurnsWorld.Unlock()
-			} else if key == 113 { // stop
-				stop <- true
-			} else if key == 112 { // pause/resume
-				pause <- true
-				var newState State
-				if paused {
-					newState = Continuing
-					paused = false
-				} else {
-					newState = Paused
-					paused = true
-				}
-				mutexTurnsWorld.Lock()
-				c.events <- StateChange{completedTurns, newState}
-				mutexTurnsWorld.Unlock()
-			}
-		}
-	}()
+	go handleKeyPresses(c.keyPresses, mutexTurnsWorld, &world, fileName, &completedTurns, c.ioCommand, c.ioFileName,
+		c.ioOutput, c.events, stop, pause)
 	var nextWorld [][]byte
 	// For each turn, pass part of the board to each worker, process it, then put it back together and repeat
 	turnsLoop:
@@ -291,7 +301,7 @@ func distributor(p Params, c distributorChannels) {
 				CompletedTurns: completedTurns,
 			}
 		}
-	ticker.Stop()
+	twoSecondTicker.Stop()
 	mutexTurnsWorld.Lock()
 	aliveCells := getAliveCells(world)
 	c.events <- FinalTurnComplete{
