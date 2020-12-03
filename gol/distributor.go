@@ -169,17 +169,15 @@ func worker(part chan [][]byte, events chan<- Event, startY int, turns int) {
 
 // Reports the number of alive cells every 2 seconds
 func ticker(twoSecondTicker *time.Ticker, mutexTurnsWorld *sync.Mutex, completedTurns *int, world *[][]byte, events chan<- Event) {
-	go func() {
-		for {
-			<-twoSecondTicker.C
-			mutexTurnsWorld.Lock()
-			events <- AliveCellsCount{
-				CompletedTurns: *completedTurns,
-				CellsCount:     calcNumAliveCells(*world),
-			}
-			mutexTurnsWorld.Unlock()
+	for {
+		<-twoSecondTicker.C
+		mutexTurnsWorld.Lock()
+		events <- AliveCellsCount{
+			CompletedTurns: *completedTurns,
+			CellsCount:     calcNumAliveCells(*world),
 		}
-	}()
+		mutexTurnsWorld.Unlock()
+	}
 }
 
 // Receives key presses from the user and performs the appropriate action
@@ -189,13 +187,14 @@ func handleKeyPresses(keyPresses <-chan rune, mutexTurnsWorld *sync.Mutex, world
 	paused := false
 	for {
 		key := <-keyPresses
-		if key == 115 { // save
+		switch key {
+		case 115: // Save
 			mutexTurnsWorld.Lock()
 			writeFile(*world, fileName, *completedTurns, ioCommand, ioFileName, ioOutput, events)
 			mutexTurnsWorld.Unlock()
-		} else if key == 113 { // stop
+		case 113: // Stop
 			stop <- true
-		} else if key == 112 { // pause/resume
+		case 112: // Pause/Resume
 			pause <- true
 			var newState State
 			if paused {
